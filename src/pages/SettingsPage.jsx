@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
-  Settings, Key, Shield, Save, Eye, EyeOff, QrCode, Info
+  Settings, Key, Shield, Save, Eye, EyeOff, QrCode, Info, Lock
 } from 'lucide-react';
 
 // Friendly names and descriptions for server.properties keys
@@ -82,10 +82,21 @@ export default function SettingsPage() {
   const [properties, setProperties] = useState([]);
   const [propsLoading, setPropsLoading] = useState(true);
   const [propsSaving, setPropsSaving] = useState(false);
+  const [serverOnline, setServerOnline] = useState(false);
 
   useEffect(() => {
     fetchProperties();
+    fetchServerStatus();
   }, []);
+
+  const fetchServerStatus = async () => {
+    try {
+      const data = await api.getServerStatus();
+      setServerOnline(data.online);
+    } catch {
+      setServerOnline(false);
+    }
+  };
 
   const fetchProperties = async () => {
     setPropsLoading(true);
@@ -313,14 +324,28 @@ export default function SettingsPage() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="card-header mb-0"><Settings className="w-5 h-5 text-mc-accent" /> Server Settings</h2>
-          <button
-            onClick={handleSaveProperties}
-            disabled={propsSaving}
-            className="btn-primary text-sm flex items-center gap-2"
-          >
-            <Save className="w-4 h-4" /> {propsSaving ? 'Saving...' : 'Save Changes'}
-          </button>
+          {!serverOnline && (
+            <button
+              onClick={handleSaveProperties}
+              disabled={propsSaving}
+              className="btn-primary text-sm flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" /> {propsSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
         </div>
+
+        {serverOnline && (
+          <div className="flex items-center gap-3 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-4 mb-4">
+            <Lock className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+            <div>
+              <p className="text-yellow-300 text-sm font-medium">Server is running</p>
+              <p className="text-yellow-400/70 text-xs mt-0.5">
+                Settings can only be edited when the server is stopped. Changes require a restart to take effect.
+              </p>
+            </div>
+          </div>
+        )}
 
         {propsLoading ? (
           <div className="animate-pulse text-gray-400">Loading properties...</div>
@@ -349,6 +374,7 @@ export default function SettingsPage() {
                                 value={value}
                                 onChange={(e) => handlePropChange(key, e.target.value)}
                                 className="input w-full text-sm"
+                                disabled={serverOnline}
                               >
                                 <option value="true">Yes</option>
                                 <option value="false">No</option>
@@ -358,6 +384,7 @@ export default function SettingsPage() {
                                 value={value}
                                 onChange={(e) => handlePropChange(key, e.target.value)}
                                 className="input w-full text-sm"
+                                disabled={serverOnline}
                               >
                                 <option value="peaceful">Peaceful</option>
                                 <option value="easy">Easy</option>
@@ -369,6 +396,7 @@ export default function SettingsPage() {
                                 value={value}
                                 onChange={(e) => handlePropChange(key, e.target.value)}
                                 className="input w-full text-sm"
+                                disabled={serverOnline}
                               >
                                 <option value="survival">Survival</option>
                                 <option value="creative">Creative</option>
@@ -381,6 +409,7 @@ export default function SettingsPage() {
                                 value={value}
                                 onChange={(e) => handlePropChange(key, e.target.value)}
                                 className="input w-full text-sm"
+                                disabled={serverOnline}
                               />
                             )}
                           </div>
@@ -394,7 +423,9 @@ export default function SettingsPage() {
           </div>
         )}
         <p className="text-xs text-gray-500 mt-3">
-          Changes are saved to server.properties. Restart the server for them to take effect.
+          {serverOnline
+            ? 'Stop the server to edit settings. Changes require a restart to take effect.'
+            : 'Changes are saved to server.properties. Start the server to apply them.'}
         </p>
       </div>
     </div>
