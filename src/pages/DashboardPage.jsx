@@ -83,7 +83,10 @@ export default function DashboardPage() {
     setActionLoading(action);
     try {
       if (action === 'start') await api.startServer();
-      else if (action === 'stop') await api.stopServer();
+      else if (action === 'stop') {
+        await api.stopServer();
+        alert('Server stopped. The VM is being deallocated to save costs.\nTo start again, power on the VM from Azure Portal first.');
+      }
       else if (action === 'restart') await api.restartServer();
       setTimeout(fetchStatus, 3000);
     } catch (err) {
@@ -176,7 +179,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => {
-                  if (confirm('Are you sure you want to stop the server?')) {
+                  if (confirm('Stop the server?\n\nThis will also shut down the VM to save costs. You will need to start the VM from Azure Portal to bring it back online.')) {
                     handleAction('stop');
                   }
                 }}
