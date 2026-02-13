@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  LayoutDashboard, Terminal, FolderOpen, Puzzle, Users,
+  LayoutDashboard, Terminal, FolderOpen, Puzzle, Users, ShieldCheck,
   Globe, Archive, Clock, Settings, LogOut, Heart, Menu, X
 } from 'lucide-react';
 import { useState } from 'react';
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/files', icon: FolderOpen, label: 'File Manager' },
   { path: '/plugins', icon: Puzzle, label: 'Plugins' },
   { path: '/players', icon: Users, label: 'Players' },
+  { path: '/whitelist', icon: ShieldCheck, label: 'Whitelist' },
   { path: '/world', icon: Globe, label: 'World' },
   { path: '/backups', icon: Archive, label: 'Backups' },
   { path: '/schedules', icon: Clock, label: 'Schedules' },

@@ -11,6 +11,7 @@ import WorldManagerPage from './pages/WorldManagerPage';
 import BackupManagerPage from './pages/BackupManagerPage';
 import ScheduleManagerPage from './pages/ScheduleManagerPage';
 import SettingsPage from './pages/SettingsPage';
+import WhitelistPage from './pages/WhitelistPage';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -39,6 +40,7 @@ export default function App() {
                 <Route path="/files/*" element={<FileManagerPage />} />
                 <Route path="/plugins" element={<PluginManagerPage />} />
                 <Route path="/players" element={<PlayerManagerPage />} />
+                <Route path="/whitelist" element={<WhitelistPage />} />
                 <Route path="/world" element={<WorldManagerPage />} />
                 <Route path="/backups" element={<BackupManagerPage />} />
                 <Route path="/schedules" element={<ScheduleManagerPage />} />

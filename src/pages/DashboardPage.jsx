@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import {
   Activity, Users, HardDrive, Cpu, Clock,
-  Server, RefreshCw, Play, Square, RotateCw
+  Server, RefreshCw, Play, Square, RotateCw, Copy, Check
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -52,6 +52,15 @@ export default function DashboardPage() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const SERVER_IP = 'lifesteal-smp.centralindia.cloudapp.azure.com';
+
+  const copyIP = () => {
+    navigator.clipboard.writeText(SERVER_IP);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -104,6 +113,23 @@ export default function DashboardPage() {
         <button onClick={fetchStatus} className="btn-secondary flex items-center gap-2">
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
+      </div>
+
+      {/* Server IP / Join Info */}
+      <div className="card bg-gradient-to-r from-mc-accent/10 to-mc-surface border-mc-accent/20">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-400 mb-1">Server Address</p>
+            <p className="text-lg font-mono font-bold text-white">{SERVER_IP}</p>
+            <p className="text-xs text-gray-500 mt-1">Minecraft Java Edition — Port 25565 (default)</p>
+          </div>
+          <button
+            onClick={copyIP}
+            className="btn-secondary flex items-center gap-2 shrink-0"
+          >
+            {copied ? <><Check className="w-4 h-4 text-mc-green" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy IP</>}
+          </button>
+        </div>
       </div>
 
       {/* Server Status Banner */}
