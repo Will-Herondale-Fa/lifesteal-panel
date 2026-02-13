@@ -342,6 +342,19 @@ class ApiClient {
   toggleSchedule(id) {
     return this.request(`/schedules/${id}/toggle`, { method: 'POST' });
   }
+
+  // ─── VM Control (via SWA serverless API, always available) ─────────────
+  async getVmStatus() {
+    const res = await fetch('/api/vm-status');
+    if (!res.ok) throw new Error('Failed to get VM status');
+    return res.json();
+  }
+
+  async startVm() {
+    const res = await fetch('/api/vm-start', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to start VM');
+    return res.json();
+  }
 }
 
 export const api = new ApiClient();

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import {
   Activity, Users, HardDrive, Cpu, Clock,
-  Server, RefreshCw, Play, Square, RotateCw, Copy, Check
+  Server, RefreshCw, Play, Square, RotateCw, Copy, Check,
+  Monitor, Loader2
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -50,8 +51,10 @@ function tpsColor(tps) {
 
 export default function DashboardPage() {
   const [status, setStatus] = useState(null);
+  const [vmStatus, setVmStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
   const [copied, setCopied] = useState(false);
 
   const SERVER_IP = 'lifesteal-smp.centralindia.cloudapp.azure.com';
@@ -62,35 +65,112 @@ export default function DashboardPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const fetchStatus = useCallback(async () => {
+  const fetchVmStatus = useCallback(async () => {
     try {
-      const data = await api.getServerStatus();
-      setStatus(data);
-    } catch (err) {
-      console.error('Status fetch failed:', err);
-    } finally {
-      setLoading(false);
+      const data = await api.getVmStatus();
+      setVmStatus(data);
+      return data;
+    } catch {
+      setVmStatus({ powerState: 'unknown', displayStatus: 'Unknown' });
+      return null;
     }
   }, []);
 
-  useEffect(() => {
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 10000);
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
-
-  const handleAction = async (action) => {
-    setActionLoading(action);
+  const fetchServerStatus = useCallback(async () => {
     try {
-      if (action === 'start') await api.startServer();
-      else if (action === 'stop') {
-        await api.stopServer();
-        alert('Server stopped. The VM is being deallocated to save costs.\nTo start again, power on the VM from Azure Portal first.');
+      const data = await api.getServerStatus();
+      setStatus(data);
+      return true;
+    } catch {
+      setStatus(null);
+      return false;
+    }
+  }, []);
+
+  const fetchAll = useCallback(async () => {
+    const vm = await fetchVmStatus();
+    if (vm?.powerState === 'running') {
+      await fetchServerStatus();
+    } else {
+      setStatus(null);
+    }
+    setLoading(false);
+  }, [fetchVmStatus, fetchServerStatus]);
+
+  useEffect(() => {
+    fetchAll();
+    const interval = setInterval(fetchAll, 10000);
+    return () => clearInterval(interval);
+  }, [fetchAll]);
+
+  const handleStart = async () => {
+    const power = vmStatus?.powerState;
+    const vmIsOff = power === 'deallocated' || power === 'stopped';
+
+    setActionLoading('starting');
+    try {
+      if (vmIsOff) {
+        setActionMessage('Starting VM...');
+        await api.startVm();
+
+        setActionMessage('Waiting for VM to boot...');
+        let vmReady = false;
+        for (let i = 0; i < 60 && !vmReady; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          const vm = await api.getVmStatus();
+          setVmStatus(vm);
+          if (vm?.powerState === 'running') vmReady = true;
+        }
+        if (!vmReady) throw new Error('VM startup timed out');
+
+        setActionMessage('Waiting for panel backend...');
+        let apiReady = false;
+        for (let i = 0; i < 24 && !apiReady; i++) {
+          await new Promise(r => setTimeout(r, 5000));
+          try {
+            await api.getServerStatus();
+            apiReady = true;
+          } catch {}
+        }
+        if (!apiReady) throw new Error('Backend did not come online in time');
       }
-      else if (action === 'restart') await api.restartServer();
-      setTimeout(fetchStatus, 3000);
+
+      setActionMessage('Starting Minecraft server...');
+      await api.startServer();
+
+      await new Promise(r => setTimeout(r, 3000));
+      await fetchAll();
     } catch (err) {
-      alert(err.error || `Failed to ${action} server.`);
+      alert('Failed to start: ' + (err.message || err.error || 'Unknown error'));
+      await fetchAll();
+    } finally {
+      setActionLoading('');
+      setActionMessage('');
+    }
+  };
+
+  const handleStop = async () => {
+    if (!confirm('Stop the server?\n\nThis will also shut down the VM to save costs. Click Start to bring everything back online.')) return;
+    setActionLoading('stopping');
+    try {
+      await api.stopServer();
+      await new Promise(r => setTimeout(r, 5000));
+      await fetchAll();
+    } catch (err) {
+      alert(err.error || 'Failed to stop server.');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleRestart = async () => {
+    setActionLoading('restarting');
+    try {
+      await api.restartServer();
+      await new Promise(r => setTimeout(r, 3000));
+      await fetchAll();
+    } catch (err) {
+      alert(err.error || 'Failed to restart server.');
     } finally {
       setActionLoading('');
     }
@@ -100,6 +180,11 @@ export default function DashboardPage() {
     return <div className="animate-pulse text-gray-400">Loading dashboard...</div>;
   }
 
+  const vmPower = vmStatus?.powerState || 'unknown';
+  const vmRunning = vmPower === 'running';
+  const vmDeallocated = vmPower === 'deallocated' || vmPower === 'stopped';
+  const vmStarting = vmPower === 'starting';
+  const serverOnline = status?.online === true;
   const tps1m = status?.tps?.tps1m;
   const totalWorldSize = status?.worlds?.reduce((sum, w) => sum + (w.size || 0), 0);
 
@@ -110,10 +195,12 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {status?.serverVersion} — {status?.online ? 'Online' : 'Offline'}
+            {vmRunning && status?.serverVersion
+              ? `${status.serverVersion} — ${serverOnline ? 'Online' : 'Offline'}`
+              : `VM ${vmStatus?.displayStatus || 'Unknown'}`}
           </p>
         </div>
-        <button onClick={fetchStatus} className="btn-secondary flex items-center gap-2">
+        <button onClick={fetchAll} className="btn-secondary flex items-center gap-2">
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
       </div>
@@ -135,65 +222,102 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Server Status Banner */}
-      <div className={clsx(
-        'card flex items-center justify-between',
-        status?.online ? 'border-emerald-700/30' : 'border-red-700/30'
-      )}>
-        <div className="flex items-center gap-4">
-          <div className={clsx(
-            'w-3 h-3 rounded-full animate-pulse',
-            status?.online ? 'bg-mc-green' : 'bg-mc-red'
-          )} />
-          <div>
-            <p className="text-lg font-semibold">
-              Server is {status?.online ? 'Online' : 'Offline'}
-            </p>
-            {status?.online && (
-              <p className="text-sm text-gray-400">
-                Uptime: {formatUptime(status?.uptime)}
-              </p>
-            )}
+      {/* Dual Status Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* VM Status */}
+        <div className={clsx(
+          'card flex items-center justify-between',
+          vmRunning ? 'border-emerald-700/30' : vmStarting ? 'border-yellow-700/30' : 'border-red-700/30'
+        )}>
+          <div className="flex items-center gap-3">
+            <div className={clsx(
+              'w-3 h-3 rounded-full',
+              vmRunning ? 'bg-mc-green animate-pulse' : vmStarting ? 'bg-mc-yellow animate-pulse' : 'bg-mc-red'
+            )} />
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Virtual Machine</p>
+              <p className="text-lg font-semibold">{vmStatus?.displayStatus || 'Unknown'}</p>
+            </div>
           </div>
+          <Monitor className={clsx('w-5 h-5', vmRunning ? 'text-mc-green' : vmStarting ? 'text-mc-yellow' : 'text-gray-500')} />
+        </div>
+
+        {/* Server Status */}
+        <div className={clsx(
+          'card flex items-center justify-between',
+          !vmRunning ? 'border-gray-700/30 opacity-60' :
+          serverOnline ? 'border-emerald-700/30' : 'border-red-700/30'
+        )}>
+          <div className="flex items-center gap-3">
+            <div className={clsx(
+              'w-3 h-3 rounded-full',
+              !vmRunning ? 'bg-gray-600' :
+              serverOnline ? 'bg-mc-green animate-pulse' : 'bg-mc-red'
+            )} />
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Minecraft Server</p>
+              <p className="text-lg font-semibold">
+                {!vmRunning ? 'Unreachable' : serverOnline ? 'Online' : 'Offline'}
+              </p>
+              {vmRunning && serverOnline && (
+                <p className="text-xs text-gray-500">Uptime: {formatUptime(status?.uptime)}</p>
+              )}
+            </div>
+          </div>
+          <Server className={clsx('w-5 h-5', !vmRunning ? 'text-gray-600' : serverOnline ? 'text-mc-green' : 'text-gray-500')} />
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <div className="card flex items-center justify-between">
+        <div>
+          {actionMessage && (
+            <div className="flex items-center gap-2 text-mc-yellow">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">{actionMessage}</span>
+            </div>
+          )}
+          {!actionMessage && !actionLoading && vmDeallocated && (
+            <p className="text-sm text-gray-400">VM is stopped. Click Start to power on and launch the server.</p>
+          )}
+          {!actionMessage && !actionLoading && vmRunning && !serverOnline && (
+            <p className="text-sm text-gray-400">VM is running but Minecraft is stopped.</p>
+          )}
+          {!actionMessage && !actionLoading && vmRunning && serverOnline && (
+            <p className="text-sm text-gray-400">Everything is running normally.</p>
+          )}
+          {!actionMessage && !actionLoading && vmStarting && (
+            <p className="text-sm text-mc-yellow">VM is starting up...</p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          {!status?.online ? (
-            <button
-              onClick={() => handleAction('start')}
-              disabled={!!actionLoading}
-              className="btn-success flex items-center gap-2"
-            >
+          {!actionLoading && (vmDeallocated || (vmRunning && !serverOnline)) && (
+            <button onClick={handleStart} className="btn-success flex items-center gap-2">
               <Play className="w-4 h-4" />
-              {actionLoading === 'start' ? 'Starting...' : 'Start'}
+              {vmDeallocated ? 'Start' : 'Start Server'}
             </button>
-          ) : (
+          )}
+          {!actionLoading && vmRunning && serverOnline && (
             <>
-              <button
-                onClick={() => handleAction('restart')}
-                disabled={!!actionLoading}
-                className="btn-secondary flex items-center gap-2"
-              >
-                <RotateCw className="w-4 h-4" />
-                {actionLoading === 'restart' ? 'Restarting...' : 'Restart'}
+              <button onClick={handleRestart} className="btn-secondary flex items-center gap-2">
+                <RotateCw className="w-4 h-4" /> Restart
               </button>
-              <button
-                onClick={() => {
-                  if (confirm('Stop the server?\n\nThis will also shut down the VM to save costs. You will need to start the VM from Azure Portal to bring it back online.')) {
-                    handleAction('stop');
-                  }
-                }}
-                disabled={!!actionLoading}
-                className="btn-danger flex items-center gap-2"
-              >
-                <Square className="w-4 h-4" />
-                {actionLoading === 'stop' ? 'Stopping...' : 'Stop'}
+              <button onClick={handleStop} className="btn-danger flex items-center gap-2">
+                <Square className="w-4 h-4" /> Stop
               </button>
             </>
+          )}
+          {actionLoading && !actionMessage && (
+            <div className="flex items-center gap-2 text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm capitalize">{actionLoading}...</span>
+            </div>
           )}
         </div>
       </div>
 
+      {vmRunning && serverOnline && (<>
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -263,7 +387,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-400">Status</dt>
-              <dd>{status?.online ? <span className="badge-green">Online</span> : <span className="badge-red">Offline</span>}</dd>
+              <dd><span className="badge-green">Online</span></dd>
             </div>
           </dl>
         </div>
@@ -283,6 +407,7 @@ export default function DashboardPage() {
           </dl>
         </div>
       </div>
+      </>)}
     </div>
   );
 }

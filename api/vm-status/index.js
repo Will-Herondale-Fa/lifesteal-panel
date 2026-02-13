@@ -1,0 +1,80 @@
+const https = require('https');
+
+const TENANT_ID = process.env.AZURE_TENANT_ID;
+const CLIENT_ID = process.env.AZURE_CLIENT_ID;
+const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
+const SUB_ID = process.env.AZURE_SUBSCRIPTION_ID;
+const RG = process.env.AZURE_RESOURCE_GROUP;
+const VM_NAME = process.env.AZURE_VM_NAME;
+
+function httpsRequest(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode, body: data });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+async function getAzureToken() {
+  const tokenBody = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    scope: 'https://management.azure.com/.default',
+  }).toString();
+
+  const res = await httpsRequest(
+    {
+      hostname: 'login.microsoftonline.com',
+      path: `/${TENANT_ID}/oauth2/v2.0/token`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(tokenBody),
+      },
+    },
+    tokenBody
+  );
+  return res.body.access_token;
+}
+
+module.exports = async function (context, req) {
+  try {
+    const token = await getAzureToken();
+    const res = await httpsRequest({
+      hostname: 'management.azure.com',
+      path: `/subscriptions/${SUB_ID}/resourceGroups/${RG}/providers/Microsoft.Compute/virtualMachines/${VM_NAME}/instanceView?api-version=2024-07-01`,
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const statuses = res.body.statuses || [];
+    // Power state is like "PowerState/running", "PowerState/deallocated", "PowerState/starting"
+    const powerStatus = statuses.find((s) => s.code && s.code.startsWith('PowerState/'));
+    const powerState = powerStatus ? powerStatus.code.replace('PowerState/', '') : 'unknown';
+    const displayStatus = powerStatus ? powerStatus.displayStatus : 'Unknown';
+
+    context.res = {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: { powerState, displayStatus },
+    };
+  } catch (err) {
+    context.res = {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: { error: 'Failed to get VM status', details: err.message },
+    };
+  }
+};
