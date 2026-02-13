@@ -30,10 +30,22 @@ class ApiClient {
       headers.Authorization = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    console.log('[API] Request:', options.method || 'GET', url);
+    console.log('[API] Headers:', JSON.stringify(headers));
+    if (options.body) console.log('[API] Body:', options.body);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
+    } catch (fetchErr) {
+      console.error('[API] Fetch FAILED (network error):', fetchErr.message);
+      throw fetchErr;
+    }
+
+    console.log('[API] Response status:', response.status, response.statusText);
 
     if (response.status === 401) {
       this.setToken(null);
@@ -42,6 +54,7 @@ class ApiClient {
     }
 
     const data = await response.json();
+    console.log('[API] Response data:', JSON.stringify(data));
 
     if (!response.ok) {
       throw {
