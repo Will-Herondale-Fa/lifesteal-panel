@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { useVm } from './context/VmContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -12,17 +13,29 @@ import BackupManagerPage from './pages/BackupManagerPage';
 import ScheduleManagerPage from './pages/ScheduleManagerPage';
 import SettingsPage from './pages/SettingsPage';
 import WhitelistPage from './pages/WhitelistPage';
+import VmOfflineOverlay from './components/VmOfflineOverlay';
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
-  if (loading) {
+  const { isAuthenticated, loading, hasToken } = useAuth();
+  const { vmRunning, loading: vmLoading } = useVm();
+
+  if (loading || vmLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-mc-darker">
         <div className="animate-pulse text-mc-accent text-xl">Loading...</div>
       </div>
     );
   }
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+
+  if (isAuthenticated) return children;
+
+  // Has a saved token but can't authenticate AND the VM is off
+  // → show the offline overlay with Start VM button instead of kicking to login
+  if (hasToken && !vmRunning) {
+    return <VmOfflineOverlay />;
+  }
+
+  return <Navigate to="/login" replace />;
 }
 
 export default function App() {

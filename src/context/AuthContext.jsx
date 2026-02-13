@@ -7,17 +7,33 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const verifyAuth = useCallback(async () => {
     const token = api.getToken();
-    if (token) {
-      api.getMe()
-        .then(setUser)
-        .catch(() => api.setToken(null))
-        .finally(() => setLoading(false));
-    } else {
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      const me = await api.getMe();
+      setUser(me);
+    } catch (err) {
+      // Network error (VM likely offline) — keep the token, don't clear it
+      if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+        setUser(null);
+      } else {
+        // Real auth failure (401, expired token, etc.)
+        api.setToken(null);
+        setUser(null);
+      }
+    } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    verifyAuth();
+  }, [verifyAuth]);
 
   const login = useCallback(async (username, password, totpToken) => {
     const result = await api.login(username, password, totpToken);
@@ -33,7 +49,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      login,
+      logout,
+      isAuthenticated: !!user,
+      hasToken: !!api.getToken(),
+      retryAuth: verifyAuth,
+    }}>
       {children}
     </AuthContext.Provider>
   );
